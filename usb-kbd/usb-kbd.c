@@ -40,7 +40,9 @@
 #include <stdio.h>
 #include <string.h>
 #include "usb-hid-keys.h"
+
 /* Systick interrupt frequency, Hz */
+
 #define SYSTICK_FREQUENCY 100
 
 /* Default AHB (core clock) frequency of Tomu board */
@@ -57,6 +59,21 @@
 
 bool g_usbd_is_connected = false;
 usbd_device *g_usbd_dev = 0;
+
+static const uint8_t script_array [40] = {
+
+//    modifier       reserved   Key1     Key2,      Key3,     Key4,      Key6,      Key7]
+  KEY_MOD_LCTRL|KEY_MOD_LALT,   0,     KEY_T,  KEY_ENTER,    0,         0,        0,         0,
+//			0, 0, 0,0,0,0,0,0,
+ 			0,          0,     KEY_L,  KEY_S,  KEY_ENTER,    0,         0,         0,
+  //          0,0,0,0,0,0,0,0,
+			0,	0,	KEY_P, KEY_W, KEY_D, 0, 0, KEY_ENTER,
+	//		0,0,0,0,0,0,0,0,
+			0, 0, KEY_P, KEY_S, KEY_SPACE,KEY_MINUS,KEY_E,KEY_S,
+	//		0,0,0,0,0,0,0,0,
+			0,0,KEY_ENTER,0,0,0,0,0,
+	//		0,0,0,0,0,0,0,0
+};
 
 static const struct usb_device_descriptor dev_descr = {
 	.bLength = USB_DT_DEVICE_SIZE,
@@ -228,28 +245,41 @@ void hard_fault_handler(void)
 
 void sys_tick_handler(void)
 {
-    static int x = 0;
+    int i;
+	static int x = 0;
+	static int j = 0;
 	static int dir = 1;
+	static int flag_end = 0;
 //	[modifier, reserved, Key1, Key2, Key3, Key4, Key6, Key7]
-	static uint8_t report[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-
+	uint8_t key_released[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+	uint8_t	key_pressed[8] =  {0, 0, 0, 0, 0, 0, 0, 0};
     if(g_usbd_is_connected) {
 		x+=dir;
-        if (x > 30){
-                report[0] = KEY_MOD_LCTRL | KEY_MOD_LALT; // keyboard
-                report[2] = KEY_T; // 'T'
-                usbd_ep_write_packet(g_usbd_dev, 0x81, report, sizeof(report));
-            gpio_toggle(LED_RED_PORT, LED_RED_PIN);
+        if (x > 50){
+
+			if(j < 40 ){
+
+				for(i = 0; i < 8 ; i++){
+					key_pressed[i] = script_array[j++];
+				}
+
+            	usbd_ep_write_packet(g_usbd_dev, 0x81, key_pressed, sizeof(key_pressed));
+            	gpio_toggle(LED_RED_PORT, LED_RED_PIN);
+			}
+            else {
+				gpio_clear(LED_RED_PORT, LED_RED_PIN);
+				flag_end = 1;
+				}
+
 			dir=-dir;
         }
-		else if (x < -30){
-                report[0] = 0; // keyboard
-                report[2] = 0;
-                usbd_ep_write_packet(g_usbd_dev, 0x81, report, sizeof(report));
-            gpio_toggle(LED_GREEN_PORT, LED_GREEN_PIN);
-			dir=-dir;
+		else if (x < -10){
+            usbd_ep_write_packet(g_usbd_dev, 0x81, key_released, sizeof(key_released));
+            	if (flag_end == 1) {
+				gpio_toggle(LED_GREEN_PORT, LED_GREEN_PIN);
+				}
+				dir=-dir;
         }
-        //usbd_ep_write_packet(g_usbd_dev, 0x81, buf, 4);
     }
 }
 
@@ -285,7 +315,6 @@ int main(void)
     nvic_set_priority(NVIC_SYSTICK_IRQ, 0x10);
 
     while(1) {
-        gpio_clear(LED_RED_PORT, LED_RED_PIN);
         for(i = 0; i != 500000; ++i)
 			__asm__("nop");
 
